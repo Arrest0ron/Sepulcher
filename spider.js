@@ -71,10 +71,10 @@ function createBones(lengths) {
 const legSegmentLengths = [32, 48, 62];
 
 const legBlueprints = [
-    { anchorForward: 28, anchorSide: 26, restForward: 96, restSide: 126, phase: 0.0, stepForward: 26, stepSide: 16, lift: 30 },
-    { anchorForward: 6, anchorSide: 32, restForward: 58, restSide: 140, phase: Math.PI * 0.5, stepForward: 24, stepSide: 16, lift: 34 },
-    { anchorForward: -18, anchorSide: 30, restForward: 8, restSide: 128, phase: Math.PI, stepForward: 20, stepSide: 14, lift: 28 },
-    { anchorForward: -44, anchorSide: 24, restForward: -46, restSide: 110, phase: Math.PI * 1.5, stepForward: 22, stepSide: 12, lift: 24 }
+    { anchorForward: 28, anchorSide: 26, restForward: 96, restSide: 126, phase: 0.0, stepForward: 26, stepSide: 16, lift: 30, swingForward: 1.35, swingSide: 1.4, reachScale: 1.08 },
+    { anchorForward: 6, anchorSide: 32, restForward: 58, restSide: 140, phase: Math.PI * 0.5, stepForward: 24, stepSide: 16, lift: 34, swingForward: 1.18, swingSide: 1.25, reachScale: 1.05 },
+    { anchorForward: -18, anchorSide: 30, restForward: 8, restSide: 128, phase: Math.PI, stepForward: 20, stepSide: 14, lift: 28, swingForward: 1.02, swingSide: 1.05 },
+    { anchorForward: -44, anchorSide: 24, restForward: -46, restSide: 110, phase: Math.PI * 1.5, stepForward: 22, stepSide: 12, lift: 24, swingForward: 0.96, swingSide: 0.92 }
 ];
 
 const mouse = { x: width * 0.5, y: height * 0.5, active: false };
@@ -142,6 +142,9 @@ function initializeLegs() {
                 stepForward: blueprint.stepForward,
                 stepSide: blueprint.stepSide,
                 lift: blueprint.lift,
+                swingForward: blueprint.swingForward ?? 1,
+                swingSide: blueprint.swingSide ?? 1,
+                reachScale: blueprint.reachScale ?? 1,
                 bones,
                 maxReach: totalLegLength * 0.9,
                 minReach: totalLegLength * 0.36,
@@ -183,7 +186,9 @@ function resetSpider() {
         const restDistance = Math.hypot(footX - anchorX, footY - anchorY) || 1;
         leg.restDistance = restDistance;
         leg.minReach = Math.min(leg.minReach, restDistance * 0.7);
-        leg.maxReach = Math.min(Math.max(leg.maxReach, restDistance * 1.02), totalLegLength * 0.95);
+        const maxCap = totalLegLength * 0.95 * leg.reachScale;
+        const desiredMax = restDistance * 1.02 * leg.reachScale;
+        leg.maxReach = Math.min(Math.max(leg.maxReach, desiredMax), maxCap);
         solveChain(leg.bones, footX, footY, anchorX, anchorY);
     }
     mouse.x = thorax.x;
@@ -273,8 +278,8 @@ function update(time) {
         leg.anchor.y = anchorY;
 
         const phase = globalPhase + leg.phase;
-        const forwardOsc = Math.sin(phase) * leg.stepForward * 0.35 + velocityForward * 18;
-        const lateralOsc = Math.cos(phase) * leg.stepSide * 0.3 + sway * 0.12;
+        const forwardOsc = (Math.sin(phase) * leg.stepForward * 0.35 + velocityForward * 18) * leg.swingForward;
+        const lateralOsc = (Math.cos(phase) * leg.stepSide * 0.3 + sway * 0.12) * leg.swingSide;
         const desiredForward = leg.restForward + forwardOsc;
         const desiredSide = leg.restSide + lateralOsc;
 
