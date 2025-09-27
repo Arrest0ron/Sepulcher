@@ -29,6 +29,8 @@ function createBones(lengths) {
     return lengths.map(length => ({ x: width * 0.5, y: height * 0.5, length, angle: 0 }));
 }
 
+const legSegmentLengths = [32, 48, 62];
+
 const legBlueprints = [
     { anchorForward: 28, anchorSide: 26, restForward: 96, restSide: 126, phase: 0.0, stepForward: 26, stepSide: 16, lift: 30 },
     { anchorForward: 6, anchorSide: 32, restForward: 58, restSide: 140, phase: Math.PI * 0.5, stepForward: 24, stepSide: 16, lift: 34 },
@@ -78,10 +80,13 @@ let heading = { x: 1, y: 0 };
 let prevThorax = { x: thorax.x, y: thorax.y };
 let legs = [];
 
+const totalLegLength = legSegmentLengths.reduce((sum, len) => sum + len, 0);
+
 function initializeLegs() {
     legs = [];
     for (const blueprint of legBlueprints) {
         for (const side of [-1, 1]) {
+            const bones = createBones(legSegmentLengths);
             legs.push({
                 side,
                 phase: blueprint.phase + (side > 0 ? Math.PI : 0),
@@ -92,7 +97,9 @@ function initializeLegs() {
                 stepForward: blueprint.stepForward,
                 stepSide: blueprint.stepSide,
                 lift: blueprint.lift,
-                bones: createBones([32, 48, 62]),
+                bones,
+                maxReach: totalLegLength * 0.95,
+                minReach: totalLegLength * 0.35,
                 foot: { x: thorax.x, y: thorax.y },
                 anchor: { x: thorax.x, y: thorax.y }
             });
@@ -120,6 +127,10 @@ function resetSpider() {
         const footY = thorax.y + forwardY * leg.restForward + normalY * (leg.restSide * leg.side);
         leg.foot.x = footX;
         leg.foot.y = footY;
+        const restDistance = Math.hypot(footX - anchorX, footY - anchorY) || 1;
+        leg.restDistance = restDistance;
+        leg.minReach = Math.min(leg.minReach, restDistance * 0.65);
+        leg.maxReach = Math.min(Math.max(leg.maxReach, restDistance * 1.05), totalLegLength * 1.02);
         solveChain(leg.bones, footX, footY, anchorX, anchorY);
     }
     mouse.x = thorax.x;
@@ -179,8 +190,21 @@ function update(time) {
         const lateralDrift = Math.cos(phase) * leg.stepSide * 0.25;
         const lift = Math.pow(Math.max(0, Math.sin(phase)), 1.8) * leg.lift;
 
-        const desiredFootX = thorax.x + heading.x * (leg.restForward + forwardReach) + normalX * ((leg.restSide + lateralDrift) * leg.side);
-        const desiredFootY = thorax.y + heading.y * (leg.restForward + forwardReach) + normalY * ((leg.restSide + lateralDrift) * leg.side) + lift - bob * 0.4;
+        let desiredFootX = thorax.x + heading.x * (leg.restForward + forwardReach) + normalX * ((leg.restSide + lateralDrift) * leg.side);
+        let desiredFootY = thorax.y + heading.y * (leg.restForward + forwardReach) + normalY * ((leg.restSide + lateralDrift) * leg.side) + lift - bob * 0.4;
+
+        const clampDX = desiredFootX - anchorX;
+        const clampDY = desiredFootY - anchorY;
+        const distance = Math.hypot(clampDX, clampDY) || 0.0001;
+        if (distance > leg.maxReach) {
+            const scale = leg.maxReach / distance;
+            desiredFootX = anchorX + clampDX * scale;
+            desiredFootY = anchorY + clampDY * scale;
+        } else if (distance < leg.minReach) {
+            const scale = leg.minReach / distance;
+            desiredFootX = anchorX + clampDX * scale;
+            desiredFootY = anchorY + clampDY * scale;
+        }
 
         const follow = 0.32 + speed * 0.5;
         leg.foot.x = lerp(leg.foot.x, desiredFootX, Math.min(follow, 0.72));
