@@ -125,8 +125,8 @@ function initializeLegs() {
                 stepSide: blueprint.stepSide,
                 lift: blueprint.lift,
                 bones,
-                maxReach: totalLegLength * 0.95,
-                minReach: totalLegLength * 0.35,
+                maxReach: totalLegLength * 0.9,
+                minReach: totalLegLength * 0.36,
                 foot: { x: thorax.x, y: thorax.y },
                 anchor: { x: thorax.x, y: thorax.y },
                 target: { x: thorax.x, y: thorax.y },
@@ -164,8 +164,8 @@ function resetSpider() {
         leg.lastStepTime = -Math.abs(leg.phase) * 0.4;
         const restDistance = Math.hypot(footX - anchorX, footY - anchorY) || 1;
         leg.restDistance = restDistance;
-        leg.minReach = Math.min(leg.minReach, restDistance * 0.65);
-        leg.maxReach = Math.min(Math.max(leg.maxReach, restDistance * 1.05), totalLegLength * 1.02);
+        leg.minReach = Math.min(leg.minReach, restDistance * 0.7);
+        leg.maxReach = Math.min(Math.max(leg.maxReach, restDistance * 1.02), totalLegLength * 0.95);
         solveChain(leg.bones, footX, footY, anchorX, anchorY);
     }
     mouse.x = thorax.x;
@@ -265,8 +265,8 @@ function update(time) {
             const targetDist = Math.hypot(targetDX, targetDY);
             const forwardError = targetDX * heading.x + targetDY * heading.y;
             const timeSinceStep = seconds - leg.lastStepTime;
-            const triggerDistance = Math.max(leg.maxReach * 0.55, 16 + speed * 80);
-            const forwardTrigger = Math.max(leg.maxReach * 0.38, 10 + speed * 48);
+            const triggerDistance = Math.max(leg.maxReach * 0.45, 14 + speed * 60);
+            const forwardTrigger = Math.max(leg.maxReach * 0.3, 8 + speed * 36);
             const minInterval = 0.16;
             const phaseGate = Math.sin(phase) > -0.2;
 
@@ -298,6 +298,10 @@ function update(time) {
             leg.foot.x = lerp(leg.step.originX, leg.step.targetX, eased);
             leg.foot.y = lerp(leg.step.originY, leg.step.targetY, eased) - liftArc;
 
+            const constrainedStep = projectToReach(anchorX, anchorY, leg.foot.x, leg.foot.y, leg.minReach, leg.maxReach);
+            leg.foot.x = constrainedStep.x;
+            leg.foot.y = constrainedStep.y;
+
             if (leg.step.progress >= 1) {
                 leg.foot.x = leg.step.targetX;
                 leg.foot.y = leg.step.targetY;
@@ -313,11 +317,9 @@ function update(time) {
             leg.foot.y = lerp(leg.foot.y, leg.target.y, settle);
         }
 
-        if (!leg.step) {
-            const constrained = projectToReach(anchorX, anchorY, leg.foot.x, leg.foot.y, leg.minReach, leg.maxReach);
-            leg.foot.x = constrained.x;
-            leg.foot.y = constrained.y;
-        }
+        const constrained = projectToReach(anchorX, anchorY, leg.foot.x, leg.foot.y, leg.minReach, leg.maxReach);
+        leg.foot.x = constrained.x;
+        leg.foot.y = constrained.y;
 
         solveChain(leg.bones, leg.foot.x, leg.foot.y, leg.anchor.x, leg.anchor.y);
     }
