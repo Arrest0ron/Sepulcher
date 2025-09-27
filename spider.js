@@ -165,10 +165,29 @@ function update(time) {
     const normalX = -heading.y;
     const normalY = heading.x;
 
-    const abdomenTargetX = thorax.x - heading.x * 82 + normalX * Math.sin(seconds * 1.3) * 12;
-    const abdomenTargetY = thorax.y - heading.y * 82 + normalY * Math.sin(seconds * 1.3) * 12 + Math.cos(seconds * 1.8) * 6;
-    abdomen.x = lerp(abdomen.x, abdomenTargetX, 0.18 + delta * 0.6);
-    abdomen.y = lerp(abdomen.y, abdomenTargetY, 0.18 + delta * 0.6);
+    const abdomenOffset = 74;
+    const abdomenSway = Math.sin(seconds * 1.3);
+    const abdomenLift = Math.cos(seconds * 1.8) * 5;
+    const abdomenTargetX = thorax.x - heading.x * abdomenOffset + normalX * abdomenSway * 10;
+    const abdomenTargetY = thorax.y - heading.y * abdomenOffset + normalY * abdomenSway * 12 + abdomenLift;
+    const abdomenFollow = Math.min(0.24 + speed * 0.9, 0.6);
+    abdomen.x = lerp(abdomen.x, abdomenTargetX, abdomenFollow);
+    abdomen.y = lerp(abdomen.y, abdomenTargetY, abdomenFollow);
+
+    const abdomenDX = abdomen.x - thorax.x;
+    const abdomenDY = abdomen.y - thorax.y;
+    const abdomenDist = Math.hypot(abdomenDX, abdomenDY) || 1;
+    const minAbdomenDist = 54;
+    const maxAbdomenDist = 86;
+    if (abdomenDist > maxAbdomenDist) {
+        const scale = maxAbdomenDist / abdomenDist;
+        abdomen.x = thorax.x + abdomenDX * scale;
+        abdomen.y = thorax.y + abdomenDY * scale;
+    } else if (abdomenDist < minAbdomenDist) {
+        const scale = minAbdomenDist / abdomenDist;
+        abdomen.x = thorax.x + abdomenDX * scale;
+        abdomen.y = thorax.y + abdomenDY * scale;
+    }
 
     const headTargetX = thorax.x + heading.x * 58 + normalX * Math.sin(seconds * 2.4) * 10;
     const headTargetY = thorax.y + heading.y * 58 + normalY * Math.sin(seconds * 2.4) * 10;
@@ -327,50 +346,27 @@ function draw(time) {
     }
     ctx.shadowBlur = 0;
 
-    const mandibleBaseForward = 14;
-    const mandibleBaseLateral = 8.5;
-    const mandibleDrop = 6;
-    const fangLengthForward = 30;
-    const fangLengthDown = 26;
+    const jawBaseForward = 12;
+    const jawLength = 34;
+    const jawSpread = 12;
+    const jawTaper = 4;
 
-    ctx.fillStyle = 'rgba(110, 8, 18, 0.62)';
-    ctx.strokeStyle = 'rgba(246, 234, 220, 0.92)';
-    ctx.lineWidth = 2.2;
-
-    ctx.beginPath();
-    const mawLeftX = head.x + forwardX * (mandibleBaseForward - 4) + normalX * -10;
-    const mawLeftY = head.y + forwardY * (mandibleBaseForward - 4) + normalY * -4 + mandibleDrop;
-    const mawRightX = head.x + forwardX * (mandibleBaseForward - 4) + normalX * 10;
-    const mawRightY = head.y + forwardY * (mandibleBaseForward - 4) + normalY * 4 + mandibleDrop;
-    const mawTipX = head.x + forwardX * (mandibleBaseForward + 16);
-    const mawTipY = head.y + forwardY * (mandibleBaseForward + 16) + mandibleDrop * 1.6;
-    ctx.moveTo(mawLeftX, mawLeftY);
-    ctx.lineTo(mawTipX, mawTipY);
-    ctx.lineTo(mawRightX, mawRightY);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    ctx.fillStyle = 'rgba(160, 32, 44, 0.78)';
+    ctx.strokeStyle = 'rgba(246, 236, 220, 0.92)';
+    ctx.lineWidth = 1.9;
 
     for (const side of [-1, 1]) {
-        const baseX = head.x + forwardX * mandibleBaseForward + normalX * (mandibleBaseLateral * side);
-        const baseY = head.y + forwardY * mandibleBaseForward + normalY * (mandibleBaseLateral * side) + mandibleDrop;
-        const tipX = baseX + forwardX * fangLengthForward + normalX * (-side * 6);
-        const tipY = baseY + forwardY * fangLengthForward + fangLengthDown + mandibleDrop * 0.6;
+        const baseInnerX = head.x + forwardX * (jawBaseForward - 4) + normalX * (side * 3);
+        const baseInnerY = head.y + forwardY * (jawBaseForward - 4) + normalY * (side * 3);
+        const baseOuterX = head.x + forwardX * jawBaseForward + normalX * (side * jawSpread);
+        const baseOuterY = head.y + forwardY * jawBaseForward + normalY * (side * jawSpread);
+        const tipX = head.x + forwardX * (jawBaseForward + jawLength) + normalX * (side * jawTaper);
+        const tipY = head.y + forwardY * (jawBaseForward + jawLength);
         ctx.beginPath();
-        ctx.moveTo(baseX, baseY);
-        ctx.quadraticCurveTo(
-            baseX + forwardX * (fangLengthForward * 0.45) + normalX * (side * 12),
-            baseY + forwardY * (fangLengthForward * 0.45) + fangLengthDown * 0.4,
-            tipX,
-            tipY
-        );
-        ctx.lineTo(tipX + normalX * (side * 4), tipY - 4);
-        ctx.quadraticCurveTo(
-            baseX + forwardX * (fangLengthForward * 0.35) + normalX * (side * 4),
-            baseY + forwardY * (fangLengthForward * 0.35) + fangLengthDown * 0.1,
-            baseX,
-            baseY
-        );
+        ctx.moveTo(baseInnerX, baseInnerY);
+        ctx.lineTo(baseOuterX, baseOuterY);
+        ctx.lineTo(tipX, tipY);
+        ctx.closePath();
         ctx.fill();
         ctx.stroke();
     }
