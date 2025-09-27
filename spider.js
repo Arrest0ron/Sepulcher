@@ -4,6 +4,14 @@ let width = 0;
 let height = 0;
 let dpr = window.devicePixelRatio || 1;
 
+const speedControl = document.getElementById('speedSlider');
+let speedSetting = speedControl ? Number(speedControl.value) : 220;
+if (speedControl) {
+    speedControl.addEventListener('input', () => {
+        speedSetting = Number(speedControl.value);
+    });
+}
+
 function resize() {
     dpr = window.devicePixelRatio || 1;
     width = window.innerWidth;
@@ -184,8 +192,14 @@ function update(time) {
     const idleY = height * 0.58 + Math.sin(seconds * 0.2) * 60;
     const targetX = mouse.active ? mouse.x : idleX;
     const targetY = mouse.active ? mouse.y : idleY;
-    thorax.x = lerp(thorax.x, targetX, 0.16);
-    thorax.y = lerp(thorax.y, targetY, 0.16);
+    const moveDX = targetX - thorax.x;
+    const moveDY = targetY - thorax.y;
+    const moveDist = Math.hypot(moveDX, moveDY);
+    if (moveDist > 0.0001) {
+        const moveStep = Math.min(moveDist, speedSetting * delta);
+        thorax.x += (moveDX / moveDist) * moveStep;
+        thorax.y += (moveDY / moveDist) * moveStep;
+    }
 
     const velX = thorax.x - prevThorax.x;
     const velY = thorax.y - prevThorax.y;
