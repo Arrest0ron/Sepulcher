@@ -12,6 +12,10 @@ if (speedControl) {
     });
 }
 
+const boneCursor = document.createElement('div');
+boneCursor.className = 'bone-cursor';
+document.body.appendChild(boneCursor);
+
 function resize() {
     dpr = window.devicePixelRatio || 1;
     width = window.innerWidth;
@@ -79,10 +83,16 @@ window.addEventListener('pointermove', event => {
     mouse.x = event.clientX;
     mouse.y = event.clientY;
     mouse.active = true;
+    boneCursor.style.left = `${event.clientX}px`;
+    boneCursor.style.top = `${event.clientY}px`;
+    if (!boneCursor.classList.contains('active')) {
+        boneCursor.classList.add('active');
+    }
 });
 
 window.addEventListener('pointerleave', () => {
     mouse.active = false;
+    boneCursor.classList.remove('active');
 });
 
 function solveChain(bones, tipX, tipY, anchorX, anchorY) {
