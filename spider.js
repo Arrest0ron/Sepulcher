@@ -25,6 +25,33 @@ resize();
 
 const lerp = (a, b, t) => a + (b - a) * t;
 
+const easeInOutQuad = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+
+function projectToReach(anchorX, anchorY, targetX, targetY, minReach, maxReach) {
+    let dx = targetX - anchorX;
+    let dy = targetY - anchorY;
+    let dist = Math.hypot(dx, dy);
+    if (dist < 0.0001) {
+        return {
+            x: anchorX + maxReach,
+            y: anchorY
+        };
+    }
+    if (dist > maxReach) {
+        const scale = maxReach / dist;
+        dx *= scale;
+        dy *= scale;
+    } else if (dist < minReach) {
+        const scale = minReach / dist;
+        dx *= scale;
+        dy *= scale;
+    }
+    return {
+        x: anchorX + dx,
+        y: anchorY + dy
+    };
+}
+
 function createBones(lengths) {
     return lengths.map(length => ({ x: width * 0.5, y: height * 0.5, length, angle: 0 }));
 }
@@ -101,7 +128,11 @@ function initializeLegs() {
                 maxReach: totalLegLength * 0.95,
                 minReach: totalLegLength * 0.35,
                 foot: { x: thorax.x, y: thorax.y },
-                anchor: { x: thorax.x, y: thorax.y }
+                anchor: { x: thorax.x, y: thorax.y },
+                target: { x: thorax.x, y: thorax.y },
+                step: null,
+                stepDuration: 0.26,
+                lastStepTime: -Math.abs(blueprint.phase) * 0.4
             });
         }
     }
@@ -127,6 +158,10 @@ function resetSpider() {
         const footY = thorax.y + forwardY * leg.restForward + normalY * (leg.restSide * leg.side);
         leg.foot.x = footX;
         leg.foot.y = footY;
+        leg.target.x = footX;
+        leg.target.y = footY;
+        leg.step = null;
+        leg.lastStepTime = -Math.abs(leg.phase) * 0.4;
         const restDistance = Math.hypot(footX - anchorX, footY - anchorY) || 1;
         leg.restDistance = restDistance;
         leg.minReach = Math.min(leg.minReach, restDistance * 0.65);
@@ -196,38 +231,93 @@ function update(time) {
 
     const sway = Math.sin(seconds * 3.2) * 6;
     const bob = Math.sin(seconds * 2.1) * 10;
-    const strideSpeed = 2.1 + speed * 12;
+    const strideSpeed = 2.4 + speed * 8;
+    const globalPhase = seconds * strideSpeed;
+    const velocityForward = velX * heading.x + velY * heading.y;
+    const sideStepping = { '-1': 0, '1': 0 };
 
     for (const leg of legs) {
-        const anchorX = thorax.x + heading.x * leg.anchorForward + normalX * (leg.anchorSide * leg.side) + normalX * sway * 0.4;
-        const anchorY = thorax.y + heading.y * leg.anchorForward + normalY * (leg.anchorSide * leg.side) + normalY * sway * 0.4;
+        if (leg.step) {
+            sideStepping[leg.side] += 1;
+        }
+    }
+
+    for (const leg of legs) {
+        const anchorX = thorax.x + heading.x * leg.anchorForward + normalX * (leg.anchorSide * leg.side) + normalX * sway * 0.35;
+        const anchorY = thorax.y + heading.y * leg.anchorForward + normalY * (leg.anchorSide * leg.side) + normalY * sway * 0.35;
         leg.anchor.x = anchorX;
         leg.anchor.y = anchorY;
 
-        const phase = seconds * strideSpeed + leg.phase;
-        const forwardReach = Math.sin(phase) * leg.stepForward * (0.35 + speed * 0.9);
-        const lateralDrift = Math.cos(phase) * leg.stepSide * 0.25;
-        const lift = Math.pow(Math.max(0, Math.sin(phase)), 1.8) * leg.lift;
+        const phase = globalPhase + leg.phase;
+        const forwardOsc = Math.sin(phase) * leg.stepForward * 0.35 + velocityForward * 18;
+        const lateralOsc = Math.cos(phase) * leg.stepSide * 0.3 + sway * 0.12;
+        const desiredForward = leg.restForward + forwardOsc;
+        const desiredSide = leg.restSide + lateralOsc;
 
-        let desiredFootX = thorax.x + heading.x * (leg.restForward + forwardReach) + normalX * ((leg.restSide + lateralDrift) * leg.side);
-        let desiredFootY = thorax.y + heading.y * (leg.restForward + forwardReach) + normalY * ((leg.restSide + lateralDrift) * leg.side) + lift - bob * 0.4;
+        const desiredX = thorax.x + heading.x * desiredForward + normalX * (desiredSide * leg.side);
+        const desiredY = thorax.y + heading.y * desiredForward + normalY * (desiredSide * leg.side) - bob * 0.1;
 
-        const clampDX = desiredFootX - anchorX;
-        const clampDY = desiredFootY - anchorY;
-        const distance = Math.hypot(clampDX, clampDY) || 0.0001;
-        if (distance > leg.maxReach) {
-            const scale = leg.maxReach / distance;
-            desiredFootX = anchorX + clampDX * scale;
-            desiredFootY = anchorY + clampDY * scale;
-        } else if (distance < leg.minReach) {
-            const scale = leg.minReach / distance;
-            desiredFootX = anchorX + clampDX * scale;
-            desiredFootY = anchorY + clampDY * scale;
+        const desiredProjected = projectToReach(anchorX, anchorY, desiredX, desiredY, leg.minReach, leg.maxReach);
+
+        if (!leg.step) {
+            const targetDX = desiredProjected.x - leg.target.x;
+            const targetDY = desiredProjected.y - leg.target.y;
+            const targetDist = Math.hypot(targetDX, targetDY);
+            const forwardError = targetDX * heading.x + targetDY * heading.y;
+            const timeSinceStep = seconds - leg.lastStepTime;
+            const triggerDistance = Math.max(leg.maxReach * 0.55, 16 + speed * 80);
+            const forwardTrigger = Math.max(leg.maxReach * 0.38, 10 + speed * 48);
+            const minInterval = 0.16;
+            const phaseGate = Math.sin(phase) > -0.2;
+
+            if (timeSinceStep > minInterval && phaseGate && sideStepping[leg.side] < 2 && (targetDist > triggerDistance || forwardError > forwardTrigger)) {
+                leg.target.x = desiredProjected.x;
+                leg.target.y = desiredProjected.y;
+                leg.step = {
+                    progress: 0,
+                    duration: Math.max(0.18, leg.stepDuration - speed * 0.08),
+                    originX: leg.foot.x,
+                    originY: leg.foot.y,
+                    targetX: desiredProjected.x,
+                    targetY: desiredProjected.y,
+                    lift: leg.lift * 0.45 + 12 + speed * 38
+                };
+                sideStepping[leg.side] += 1;
+            }
+        } else {
+            leg.target.x = desiredProjected.x;
+            leg.target.y = desiredProjected.y;
+            leg.step.targetX = desiredProjected.x;
+            leg.step.targetY = desiredProjected.y;
         }
 
-        const follow = 0.32 + speed * 0.5;
-        leg.foot.x = lerp(leg.foot.x, desiredFootX, Math.min(follow, 0.72));
-        leg.foot.y = lerp(leg.foot.y, desiredFootY, Math.min(follow, 0.72));
+        if (leg.step) {
+            leg.step.progress = Math.min(1, leg.step.progress + delta / leg.step.duration);
+            const eased = easeInOutQuad(leg.step.progress);
+            const liftArc = Math.sin(leg.step.progress * Math.PI) * leg.step.lift;
+            leg.foot.x = lerp(leg.step.originX, leg.step.targetX, eased);
+            leg.foot.y = lerp(leg.step.originY, leg.step.targetY, eased) - liftArc;
+
+            if (leg.step.progress >= 1) {
+                leg.foot.x = leg.step.targetX;
+                leg.foot.y = leg.step.targetY;
+                leg.target.x = leg.foot.x;
+                leg.target.y = leg.foot.y;
+                leg.step = null;
+                leg.lastStepTime = seconds;
+                sideStepping[leg.side] = Math.max(0, sideStepping[leg.side] - 1);
+            }
+        } else {
+            const settle = Math.min(0.22 + speed * 0.32, 0.65);
+            leg.foot.x = lerp(leg.foot.x, leg.target.x, settle);
+            leg.foot.y = lerp(leg.foot.y, leg.target.y, settle);
+        }
+
+        if (!leg.step) {
+            const constrained = projectToReach(anchorX, anchorY, leg.foot.x, leg.foot.y, leg.minReach, leg.maxReach);
+            leg.foot.x = constrained.x;
+            leg.foot.y = constrained.y;
+        }
 
         solveChain(leg.bones, leg.foot.x, leg.foot.y, leg.anchor.x, leg.anchor.y);
     }
