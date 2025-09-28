@@ -4,6 +4,11 @@ let width = 0;
 let height = 0;
 let dpr = window.devicePixelRatio || 1;
 
+let webThreads = [];
+let webRings = [];
+let webAnchor = { x: 0, y: 0 };
+let motes = [];
+
 const speedControl = document.getElementById('speedSlider');
 let speedSetting = speedControl ? Number(speedControl.value) : 220;
 if (speedControl) {
@@ -11,6 +16,9 @@ if (speedControl) {
         speedSetting = Number(speedControl.value);
     });
 }
+
+const boneControl = document.getElementById('boneSlider');
+let boneLengthScale = boneControl ? Number(boneControl.value) / 100 : 1.0;
 
 const boneCursor = document.createElement('div');
 boneCursor.className = 'bone-cursor';
@@ -26,6 +34,7 @@ function resize() {
     canvas.style.height = `${height}px`;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(dpr, dpr);
+    generateWebGeometry();
 }
 
 window.addEventListener('resize', () => {
@@ -68,14 +77,205 @@ function createBones(lengths) {
     return lengths.map(length => ({ x: width * 0.5, y: height * 0.5, length, angle: 0 }));
 }
 
-const legSegmentLengths = [32, 48, 62];
-
-const legBlueprints = [
-    { anchorForward: 28, anchorSide: 26, restForward: 96, restSide: 126, phase: 0.0, stepForward: 26, stepSide: 16, lift: 30, swingForward: 1.35, swingSide: 1.4, reachScale: 1.08 },
-    { anchorForward: 6, anchorSide: 32, restForward: 58, restSide: 140, phase: Math.PI * 0.5, stepForward: 24, stepSide: 16, lift: 34, swingForward: 1.18, swingSide: 1.25, reachScale: 1.05 },
-    { anchorForward: -18, anchorSide: 30, restForward: 8, restSide: 128, phase: Math.PI, stepForward: 20, stepSide: 14, lift: 28, swingForward: 1.02, swingSide: 1.05 },
-    { anchorForward: -44, anchorSide: 24, restForward: -46, restSide: 110, phase: Math.PI * 1.5, stepForward: 22, stepSide: 12, lift: 24, swingForward: 0.96, swingSide: 0.92 }
+const BASE_SEGMENT_LENGTHS = [32, 48, 62];
+const BASE_BLUEPRINTS = [
+    {
+        anchorForward: 28,
+        anchorSide: 26,
+        restForward: 96,
+        restSide: 126,
+        phase: 0.0,
+        stepForward: 26,
+        stepSide: 16,
+        lift: 30,
+        swingForward: 1.35,
+        swingSide: 1.4,
+        reachScale: 1.08
+    },
+    {
+        anchorForward: 6,
+        anchorSide: 32,
+        restForward: 58,
+        restSide: 140,
+        phase: Math.PI * 0.5,
+        stepForward: 24,
+        stepSide: 16,
+        lift: 34,
+        swingForward: 1.18,
+        swingSide: 1.25,
+        reachScale: 1.05
+    },
+    {
+        anchorForward: -18,
+        anchorSide: 30,
+        restForward: 8,
+        restSide: 128,
+        phase: Math.PI,
+        stepForward: 20,
+        stepSide: 14,
+        lift: 28,
+        swingForward: 1.02,
+        swingSide: 1.05,
+        reachScale: 1
+    },
+    {
+        anchorForward: -44,
+        anchorSide: 24,
+        restForward: -46,
+        restSide: 110,
+        phase: Math.PI * 1.5,
+        stepForward: 22,
+        stepSide: 12,
+        lift: 24,
+        swingForward: 0.96,
+        swingSide: 0.92,
+        reachScale: 1
+    }
 ];
+
+function scaleSegmentLengths(scale) {
+    return BASE_SEGMENT_LENGTHS.map(length => length * scale);
+}
+
+function scaleBlueprints(scale) {
+    const offsetScale = scale;
+    const stepScale = scale;
+    return BASE_BLUEPRINTS.map(bp => ({
+        anchorForward: bp.anchorForward,
+        anchorSide: bp.anchorSide,
+        restForward: bp.restForward * offsetScale,
+        restSide: bp.restSide * offsetScale,
+        phase: bp.phase,
+        stepForward: bp.stepForward * stepScale,
+        stepSide: bp.stepSide * stepScale,
+        lift: bp.lift * stepScale,
+        swingForward: bp.swingForward,
+        swingSide: bp.swingSide,
+        reachScale: (bp.reachScale ?? 1) * offsetScale
+    }));
+}
+
+let legSegmentLengths = scaleSegmentLengths(boneLengthScale);
+let legBlueprints = scaleBlueprints(boneLengthScale);
+let totalLegLength = legSegmentLengths.reduce((sum, len) => sum + len, 0);
+
+function generateWebGeometry() {
+    webThreads = [];
+    webRings = [];
+    motes = [];
+    const baseRadius = Math.min(width, height) * 0.65;
+    webAnchor = {
+        x: width * 0.53,
+        y: height * 0.4
+    };
+
+    const spokeCount = 14;
+    for (let i = 0; i < spokeCount; i++) {
+        const angle = (i / spokeCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
+        const reach = baseRadius * (0.9 + Math.random() * 0.2);
+        const controlOffset = reach * 0.35;
+        const endX = webAnchor.x + Math.cos(angle) * reach;
+        const endY = webAnchor.y + Math.sin(angle) * reach;
+        const midX = webAnchor.x + Math.cos(angle) * controlOffset + (Math.random() - 0.5) * 45;
+        const midY = webAnchor.y + Math.sin(angle) * controlOffset + (Math.random() - 0.5) * 35;
+        webThreads.push({
+            start: { x: webAnchor.x, y: webAnchor.y },
+            mid: { x: midX, y: midY },
+            end: { x: endX, y: endY },
+            alpha: 0.1 + Math.random() * 0.06
+        });
+    }
+
+    const ringCount = 6;
+    for (let r = 1; r <= ringCount; r++) {
+        const radius = (r / ringCount) * baseRadius * (0.85 + Math.random() * 0.06);
+        webRings.push({
+            radius,
+            alpha: 0.06 + (r / ringCount) * 0.05
+        });
+    }
+
+    const moteCount = 90;
+    for (let i = 0; i < moteCount; i++) {
+        motes.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            radius: 0.6 + Math.random() * 1.8,
+            phase: Math.random() * Math.PI * 2,
+            drift: 20 + Math.random() * 60,
+            alpha: 0.05 + Math.random() * 0.12
+        });
+    }
+}
+
+function applyBoneScale(scale) {
+    const clamped = Math.max(0.3, Math.min(2.5, scale));
+    boneLengthScale = clamped;
+    legSegmentLengths = scaleSegmentLengths(boneLengthScale);
+    legBlueprints = scaleBlueprints(boneLengthScale);
+    totalLegLength = legSegmentLengths.reduce((sum, len) => sum + len, 0);
+    resetSpider();
+    if (boneControl && Number(boneControl.value) / 100 !== boneLengthScale) {
+        boneControl.value = String(Math.round(boneLengthScale * 100));
+    }
+}
+
+function drawSpiderDenBackdrop(time, seconds) {
+    ctx.save();
+
+    const floorGradient = ctx.createLinearGradient(0, height, 0, height * 0.55);
+    floorGradient.addColorStop(0, 'rgba(4, 6, 10, 0.95)');
+    floorGradient.addColorStop(1, 'rgba(4, 6, 10, 0)');
+    ctx.fillStyle = floorGradient;
+    ctx.fillRect(0, height * 0.5, width, height * 0.5);
+
+    const ceilingGradient = ctx.createRadialGradient(width * 0.5, height * 0.05, 20, width * 0.5, height * 0.05, height * 0.6);
+    ceilingGradient.addColorStop(0, 'rgba(8, 10, 16, 0.55)');
+    ceilingGradient.addColorStop(1, 'rgba(2, 3, 5, 0)');
+    ctx.fillStyle = ceilingGradient;
+    ctx.fillRect(0, 0, width, height * 0.6);
+
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineWidth = 1.1;
+    for (const thread of webThreads) {
+        ctx.strokeStyle = `rgba(210, 220, 242, ${thread.alpha})`;
+        ctx.beginPath();
+        ctx.moveTo(thread.start.x, thread.start.y);
+        ctx.quadraticCurveTo(thread.mid.x, thread.mid.y, thread.end.x, thread.end.y);
+        ctx.stroke();
+
+        ctx.strokeStyle = `rgba(255, 255, 255, ${thread.alpha * 0.45})`;
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(thread.start.x, thread.start.y);
+        ctx.quadraticCurveTo(thread.mid.x, thread.mid.y, thread.end.x, thread.end.y);
+        ctx.stroke();
+    }
+
+    ctx.lineWidth = 0.9;
+    for (const ring of webRings) {
+        ctx.strokeStyle = `rgba(225, 235, 250, ${ring.alpha})`;
+        ctx.beginPath();
+        ctx.ellipse(webAnchor.x, webAnchor.y, ring.radius, ring.radius * 0.92, 0, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
+
+    for (const mote of motes) {
+        const offsetX = Math.sin(seconds * 0.3 + mote.phase) * (mote.drift * 0.03);
+        const offsetY = Math.cos(seconds * 0.4 + mote.phase) * (mote.drift * 0.05) + Math.sin(time * 0.0008 + mote.phase) * 3;
+        const x = (mote.x + offsetX + width) % width;
+        const y = (mote.y + offsetY + height) % height;
+        const pulse = 0.6 + Math.sin(time * 0.0012 + mote.phase) * 0.4;
+        ctx.fillStyle = `rgba(200, 220, 255, ${mote.alpha * pulse})`;
+        ctx.beginPath();
+        ctx.arc(x, y, mote.radius * (0.8 + pulse * 0.4), 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    ctx.restore();
+}
 
 const mouse = { x: width * 0.5, y: height * 0.5, active: false };
 
@@ -124,8 +324,6 @@ let head = { x: thorax.x + 54, y: thorax.y - 6 };
 let heading = { x: 1, y: 0 };
 let prevThorax = { x: thorax.x, y: thorax.y };
 let legs = [];
-
-const totalLegLength = legSegmentLengths.reduce((sum, len) => sum + len, 0);
 
 function initializeLegs() {
     legs = [];
@@ -196,6 +394,16 @@ function resetSpider() {
 }
 
 resetSpider();
+
+if (boneControl) {
+    boneControl.addEventListener('input', () => {
+        const newScale = Number(boneControl.value) / 100;
+        if (!Number.isFinite(newScale)) {
+            return;
+        }
+        applyBoneScale(newScale);
+    });
+}
 
 let lastTime = 0;
 
@@ -399,6 +607,7 @@ function draw(time) {
     ctx.fillRect(0, 0, width, height);
 
     const seconds = time * 0.001;
+    drawSpiderDenBackdrop(time, seconds);
     const haze = ctx.createRadialGradient(thorax.x, thorax.y, 18, thorax.x, thorax.y, Math.max(width, height) * 0.55);
     haze.addColorStop(0, 'rgba(140, 150, 190, 0.06)');
     haze.addColorStop(1, 'rgba(2, 3, 4, 0)');
